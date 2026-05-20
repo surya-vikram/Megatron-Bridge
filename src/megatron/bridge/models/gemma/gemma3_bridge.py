@@ -160,8 +160,26 @@ class Gemma3ModelBridge(MegatronModelBridge):
         return hf_state_dict[self._resolve_import_key(hf_param, hf_state_dict)]
 
     def provider_bridge(self, hf_pretrained: PreTrainedCausalLM) -> Gemma3ModelProvider:
-        provider = super().provider_bridge(hf_pretrained)
         hf_config = hf_pretrained.config
+
+        # Flatten nested text_config attributes to top-level for standard bridge mapping
+        if hasattr(hf_config, "text_config"):
+            logger.info("Flattening nested Gemma3 text_config for conversion...")
+            for key in [
+                "num_attention_heads",
+                "num_key_value_heads",
+                "hidden_size",
+                "intermediate_size",
+                "num_hidden_layers",
+                "head_dim",
+                "sliding_window",
+                "vocab_size",
+                "max_position_embeddings",
+            ]:
+                if hasattr(hf_config.text_config, key):
+                    setattr(hf_config, key, getattr(hf_config.text_config, key))
+
+        provider = super().provider_bridge(hf_pretrained)
         hf_vl_config = AutoConfig.from_pretrained(hf_pretrained._model_name_or_path, trust_remote_code=True)
         params_dtype = self.dtype_from_hf(hf_vl_config, default=torch.float32)
         provider.fp16 = params_dtype == torch.float16
