@@ -67,3 +67,67 @@ class Gemma3VLModelProvider(Gemma3ModelProvider):
 
     def provide_language_model(self, pre_process=None, post_process=None, vp_stage=None) -> MCoreGPTModel:
         return super().provide(pre_process=pre_process, post_process=post_process, vp_stage=vp_stage)
+
+
+@dataclass
+class Gemma3VLModelProvider4B(Gemma3VLModelProvider):
+    """Gemma3 4B VL config"""
+
+    is_vision_language: bool = True
+    num_layers: int = 34
+    hidden_size: int = 2560
+    num_attention_heads: int = 8
+    num_query_groups: int = 4
+    kv_channels: int = 256
+    ffn_hidden_size: int = 10240
+    window_size: int = 1024
+    rope_scaling_factor: float = 8.0
+    vocab_size: int = 262_208
+
+    def __post_init__(self):
+        super().__post_init__()
+        # Set projector hidden size to match language model hidden size
+        if self.vision_projector_config.hidden_size != self.hidden_size:
+            self.vision_projector_config.hidden_size = self.hidden_size
+
+
+@dataclass
+class Gemma3VLModelProvider12B(Gemma3VLModelProvider):
+    """Gemma3 12B VL config"""
+
+    is_vision_language: bool = True
+    num_layers: int = 48
+    hidden_size: int = 3840
+    num_attention_heads: int = 16
+    num_query_groups: int = 8
+    kv_channels: int = 256
+    ffn_hidden_size: int = 15360
+    window_size: int = 1024
+    rope_scaling_factor: float = 8.0
+    vocab_size: int = 262_208
+
+    def __post_init__(self):
+        super().__post_init__()
+        if self.vision_projector_config.hidden_size != self.hidden_size:
+            self.vision_projector_config.hidden_size = self.hidden_size
+
+
+@dataclass
+class Gemma3VLModelProvider27B(Gemma3VLModelProvider):
+    """Gemma3 27B VL config"""
+
+    is_vision_language: bool = True
+    num_layers: int = 62
+    hidden_size: int = 5376
+    num_attention_heads: int = 32
+    num_query_groups: int = 16
+    kv_channels: int = 128
+    ffn_hidden_size: int = 21504
+    window_size: int = 1024
+    rope_scaling_factor: float = 8.0
+    vocab_size: int = 262_208
+
+    def __post_init__(self):
+        super().__post_init__()
+        if self.vision_projector_config.hidden_size != self.hidden_size:
+            self.vision_projector_config.hidden_size = self.hidden_size
