@@ -48,9 +48,9 @@ CausalLMType = TypeVar("CausalLMType", bound=AutoModelForCausalLM)
 class _ConfigOnlyPretrainedShim:
     """Lightweight shim that provides the minimal PreTrainedCausalLM interface for config-only bridges."""
 
-    def __init__(self, config: PretrainedConfig):
+    def __init__(self, config: PretrainedConfig, model_name_or_path: Optional[str] = None):
         self.config = config
-        self.model_name_or_path = getattr(config, "name_or_path", None)
+        self.model_name_or_path = model_name_or_path or getattr(config, "name_or_path", None)
         self.trust_remote_code = getattr(config, "trust_remote_code", False)
         self.generation_config = self._build_generation_config(config)
 

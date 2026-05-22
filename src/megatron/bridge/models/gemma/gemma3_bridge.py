@@ -56,7 +56,7 @@ class Gemma3ModelBridge(MegatronModelBridge):
         hf_config = hf_pretrained.config
 
         # Precision config is stored in the VL Config
-        hf_vl_config = AutoConfig.from_pretrained(hf_pretrained._model_name_or_path)
+        hf_vl_config = AutoConfig.from_pretrained(hf_pretrained.model_name_or_path)
 
         # Override dtype from VL config (has precision info)
         params_dtype = self.dtype_from_hf(hf_vl_config, default=torch.float32)

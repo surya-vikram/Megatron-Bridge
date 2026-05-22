@@ -1647,7 +1647,7 @@ class AutoBridge(Generic[MegatronModelT]):
     def _config_only_pretrained(self) -> _ConfigOnlyPretrainedShim:
         if not isinstance(self.hf_pretrained, PretrainedConfig):
             raise ValueError("Config-only shim accessed when hf_pretrained is not a PretrainedConfig instance.")
-        return _ConfigOnlyPretrainedShim(self.hf_pretrained)
+        return _ConfigOnlyPretrainedShim(self.hf_pretrained, model_name_or_path=self.hf_model_id)
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
