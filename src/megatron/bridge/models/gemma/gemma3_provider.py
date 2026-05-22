@@ -164,8 +164,8 @@ class Gemma3ModelProvider4B(Gemma3ModelProvider):
 
     is_vision_language: bool = True
     num_layers: int = 34
-    hidden_size: int = 3072
-    num_attention_heads: int = 12
+    hidden_size: int = 2560
+    num_attention_heads: int = 8
     num_query_groups: int = 4
     kv_channels: int = 256
     ffn_hidden_size: int = 10240
