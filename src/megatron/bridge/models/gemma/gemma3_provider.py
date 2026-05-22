@@ -179,11 +179,11 @@ class Gemma3ModelProvider12B(Gemma3ModelProvider):
     """Gemma3 12B config"""
 
     is_vision_language: bool = True
-    num_layers: int = 40
-    hidden_size: int = 4096
-    num_attention_heads: int = 32
+    num_layers: int = 48
+    hidden_size: int = 3840
+    num_attention_heads: int = 16
     num_query_groups: int = 8
-    kv_channels: int = 128
+    kv_channels: int = 256
     ffn_hidden_size: int = 15360
     window_size: int = 1024
     rope_scaling_factor: float = 8.0
@@ -199,8 +199,8 @@ class Gemma3ModelProvider27B(Gemma3ModelProvider):
     hidden_size: int = 5376
     num_attention_heads: int = 32
     num_query_groups: int = 16
-    kv_channels: int = 128
-    softmax_scale: int = 1.0 / math.sqrt(168)  # only for 27B, (5376 // 32)^(-0.5)
+    kv_channels: int = 168
+    softmax_scale: float = 1.0 / math.sqrt(168)
     ffn_hidden_size: int = 21504
     window_size: int = 1024
     rope_scaling_factor: float = 8.0
