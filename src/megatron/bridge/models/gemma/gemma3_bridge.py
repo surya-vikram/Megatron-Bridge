@@ -180,7 +180,10 @@ class Gemma3ModelBridge(MegatronModelBridge):
                     setattr(hf_config, key, getattr(hf_config.text_config, key))
 
         provider = super().provider_bridge(hf_pretrained)
-        hf_vl_config = AutoConfig.from_pretrained(hf_pretrained._model_name_or_path, trust_remote_code=True)
+        if hasattr(hf_pretrained, "_model_name_or_path"):
+            hf_vl_config = AutoConfig.from_pretrained(hf_pretrained._model_name_or_path, trust_remote_code=True)
+        else:
+            hf_vl_config = hf_pretrained.config
         params_dtype = self.dtype_from_hf(hf_vl_config, default=torch.float32)
         provider.fp16 = params_dtype == torch.float16
         provider.bf16 = params_dtype == torch.bfloat16
@@ -241,20 +244,20 @@ class Gemma3ModelBridge(MegatronModelBridge):
 
     def mapping_registry(self) -> MegatronMappingRegistry:
         mapping = {
-            "embedding.word_embeddings.weight": "language_model.model.embed_tokens.weight",
-            "decoder.layers.*.self_attention.linear_qkv.layer_norm_weight": "language_model.model.layers.*.input_layernorm.weight",
-            "decoder.layers.*.self_attention.q_layernorm.weight": "language_model.model.layers.*.self_attn.q_norm.weight",
-            "decoder.layers.*.self_attention.k_layernorm.weight": "language_model.model.layers.*.self_attn.k_norm.weight",
-            "decoder.layers.*.self_attention.linear_proj.weight": "language_model.model.layers.*.self_attn.o_proj.weight",
+            "embedding.word_embeddings.weight": "model.embed_tokens.weight",
+            "decoder.layers.*.self_attention.linear_qkv.layer_norm_weight": "model.layers.*.input_layernorm.weight",
+            "decoder.layers.*.self_attention.q_layernorm.weight": "model.layers.*.self_attn.q_norm.weight",
+            "decoder.layers.*.self_attention.k_layernorm.weight": "model.layers.*.self_attn.k_norm.weight",
+            "decoder.layers.*.self_attention.linear_proj.weight": "model.layers.*.self_attn.o_proj.weight",
             "decoder.layers.*.self_attention.linear_proj.post_layernorm.weight": (
-                "language_model.model.layers.*.post_attention_layernorm.weight"
+                "model.layers.*.post_attention_layernorm.weight"
             ),
-            "decoder.layers.*.mlp.linear_fc1.layer_norm_weight": "language_model.model.layers.*.pre_feedforward_layernorm.weight",
-            "decoder.layers.*.mlp.linear_fc2.weight": "language_model.model.layers.*.mlp.down_proj.weight",
+            "decoder.layers.*.mlp.linear_fc1.layer_norm_weight": "model.layers.*.pre_feedforward_layernorm.weight",
+            "decoder.layers.*.mlp.linear_fc2.weight": "model.layers.*.mlp.down_proj.weight",
             "decoder.layers.*.mlp.linear_fc2.post_layernorm.weight": (
-                "language_model.model.layers.*.post_feedforward_layernorm.weight"
+                "model.layers.*.post_feedforward_layernorm.weight"
             ),
-            "decoder.final_layernorm.weight": "language_model.model.norm.weight",
+            "decoder.final_layernorm.weight": "model.norm.weight",
         }
         mapping_list = []
         for megatron_param, hf_param in mapping.items():
@@ -264,17 +267,17 @@ class Gemma3ModelBridge(MegatronModelBridge):
 
         qkv_mapping = QKVMapping(
             megatron_param="decoder.layers.*.self_attention.linear_qkv.weight",
-            q="language_model.model.layers.*.self_attn.q_proj.weight",
-            k="language_model.model.layers.*.self_attn.k_proj.weight",
-            v="language_model.model.layers.*.self_attn.v_proj.weight",
+            q="model.layers.*.self_attn.q_proj.weight",
+            k="model.layers.*.self_attn.k_proj.weight",
+            v="model.layers.*.self_attn.v_proj.weight",
         )
         qkv_mapping.allow_hf_name_mismatch = True
         mapping_list.append(qkv_mapping)
 
         gated_mlp_mapping = GatedMLPMapping(
             megatron_param="decoder.layers.*.mlp.linear_fc1.weight",
-            gate="language_model.model.layers.*.mlp.gate_proj.weight",
-            up="language_model.model.layers.*.mlp.up_proj.weight",
+            gate="model.layers.*.mlp.gate_proj.weight",
+            up="model.layers.*.mlp.up_proj.weight",
         )
         gated_mlp_mapping.allow_hf_name_mismatch = True
         mapping_list.append(gated_mlp_mapping)
