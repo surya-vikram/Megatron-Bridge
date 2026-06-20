@@ -27,7 +27,7 @@ from megatron.bridge.models.hf_pretrained.causal_lm import PreTrainedCausalLM
 
 @pytest.fixture
 def chimera_config_dict() -> dict:
-    """Create the locked Chimera 12B configuration."""
+    """Create the locked Chimera 10B configuration."""
     return {
         "architectures": ["ChimeraForCausalLM"],
         "attention_bias": False,
@@ -44,14 +44,14 @@ def chimera_config_dict() -> dict:
         "max_position_embeddings": 32768,
         "mlp_bias": False,
         "model_type": "chimera",
-        "moe_intermediate_size": 704,
+        "moe_intermediate_size": 1024,
         "n_group": 1,
-        "n_routed_experts": 96,
+        "n_routed_experts": 64,
         "n_shared_experts": 1,
         "norm_topk_prob": True,
         "num_attention_heads": 16,
-        "num_experts_per_tok": 8,
-        "num_hidden_layers": 28,
+        "num_experts_per_tok": 4,
+        "num_hidden_layers": 25,
         "num_key_value_heads": 2,
         "original_max_position_embeddings": 8192,
         "pad_token_id": 1,
@@ -60,8 +60,9 @@ def chimera_config_dict() -> dict:
         "rope_theta": 10000000.0,
         "routed_scaling_factor": 1.0,
         "router_aux_loss_coef": 0.001,
+        "router_bias_update_rate": 0.0001,
         "scoring_func": "sigmoid",
-        "shared_expert_intermediate_size": 704,
+        "shared_expert_intermediate_size": 1024,
         "tie_word_embeddings": False,
         "topk_group": 1,
         "topk_method": "noaux_tc",
@@ -136,17 +137,17 @@ class TestChimeraBridge:
         assert provider.moe_router_score_function == "sigmoid"
         assert provider.moe_router_pre_softmax is False
         assert provider.moe_router_enable_expert_bias is True
-        assert provider.moe_router_bias_update_rate == 0
+        assert provider.moe_router_bias_update_rate == 0.0001
         assert provider.moe_router_dtype == "fp32"
         assert provider.moe_aux_loss_coeff == hf_config.router_aux_loss_coef
         assert provider.moe_shared_expert_gate is False
-        assert provider.moe_shared_expert_intermediate_size == 704
+        assert provider.moe_shared_expert_intermediate_size == 1024
 
     def test_provider_bridge_maps_first_and_last_dense_layers(self, mock_pretrained_chimera: Mock) -> None:
         """Test Chimera's first and last dense layer mask."""
         provider = ChimeraBridge().provider_bridge(mock_pretrained_chimera)
 
-        assert provider.moe_layer_freq == [0] + [1] * 26 + [0]
+        assert provider.moe_layer_freq == [0] + [1] * 23 + [0]
 
     def test_megatron_to_hf_config_preserves_chimera_fields(self, mock_pretrained_chimera: Mock) -> None:
         """Test Chimera-specific HF config fields are reconstructed on export."""
@@ -157,11 +158,12 @@ class TestChimeraBridge:
         assert hf_config["model_type"] == "chimera"
         assert hf_config["first_k_dense_replace"] == 1
         assert hf_config["last_k_dense_replace"] == 1
-        assert hf_config["n_routed_experts"] == 96
-        assert hf_config["num_experts_per_tok"] == 8
+        assert hf_config["n_routed_experts"] == 64
+        assert hf_config["num_experts_per_tok"] == 4
         assert hf_config["n_shared_experts"] == 1
-        assert hf_config["moe_intermediate_size"] == 704
-        assert hf_config["shared_expert_intermediate_size"] == 704
+        assert hf_config["moe_intermediate_size"] == 1024
+        assert hf_config["shared_expert_intermediate_size"] == 1024
+        assert hf_config["router_bias_update_rate"] == 0.0001
         assert hf_config["norm_topk_prob"] is True
         assert hf_config["topk_method"] == "noaux_tc"
         assert hf_config["scoring_func"] == "sigmoid"
