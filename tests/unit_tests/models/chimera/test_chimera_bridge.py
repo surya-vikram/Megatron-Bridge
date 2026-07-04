@@ -34,13 +34,13 @@ def chimera_config_dict() -> dict:
         "attention_dropout": 0.0,
         "bos_token_id": 0,
         "eos_token_id": 1,
-        "first_k_dense_replace": 1,
+        "first_k_dense_replace": 2,
         "head_dim": 256,
         "hidden_act": "silu",
         "hidden_size": 2048,
         "initializer_range": 0.02,
         "intermediate_size": 8192,
-        "last_k_dense_replace": 1,
+        "last_k_dense_replace": 0,
         "max_position_embeddings": 32768,
         "mlp_bias": False,
         "model_type": "chimera",
@@ -147,7 +147,7 @@ class TestChimeraBridge:
         """Test Chimera's first and last dense layer mask."""
         provider = ChimeraBridge().provider_bridge(mock_pretrained_chimera)
 
-        assert provider.moe_layer_freq == [0] + [1] * 23 + [0]
+        assert provider.moe_layer_freq == [0] * 2 + [1] * 23
 
     def test_megatron_to_hf_config_preserves_chimera_fields(self, mock_pretrained_chimera: Mock) -> None:
         """Test Chimera-specific HF config fields are reconstructed on export."""
@@ -156,8 +156,8 @@ class TestChimeraBridge:
 
         assert hf_config["architectures"] == ["ChimeraForCausalLM"]
         assert hf_config["model_type"] == "chimera"
-        assert hf_config["first_k_dense_replace"] == 1
-        assert hf_config["last_k_dense_replace"] == 1
+        assert hf_config["first_k_dense_replace"] == 2
+        assert hf_config["last_k_dense_replace"] == 0
         assert hf_config["n_routed_experts"] == 64
         assert hf_config["num_experts_per_tok"] == 4
         assert hf_config["n_shared_experts"] == 1
