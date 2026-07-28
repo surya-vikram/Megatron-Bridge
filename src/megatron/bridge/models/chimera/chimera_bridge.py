@@ -79,7 +79,7 @@ class ChimeraBridge(MegatronModelBridge):
                 "pad_token_id": 1,
                 "bos_token_id": 0,
                 "eos_token_id": 1,
-                "router_bias_update_rate": getattr(provider, "moe_router_bias_update_rate", 0.0001),
+                "router_bias_update_rate": getattr(provider, "moe_router_bias_update_rate", 0.001),
                 "scoring_func": "sigmoid",
                 "shared_expert_intermediate_size": shared_size // n_shared_experts if shared_size else None,
                 "topk_group": getattr(provider, "moe_router_group_topk", 1) or 1,
@@ -123,7 +123,7 @@ class ChimeraBridge(MegatronModelBridge):
         provider.moe_router_dtype = "fp32"
         provider.moe_permute_fusion = True
         provider.moe_router_enable_expert_bias = True
-        provider.moe_router_bias_update_rate = getattr(hf_config, "router_bias_update_rate", 0.0001)
+        provider.moe_router_bias_update_rate = getattr(hf_config, "router_bias_update_rate", 0.001)
         provider.moe_shared_expert_gate = False
         provider.moe_shared_expert_overlap = True
         provider.moe_shared_expert_intermediate_size = (

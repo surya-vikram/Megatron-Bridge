@@ -58,9 +58,9 @@ def chimera_config_dict() -> dict:
         "rms_norm_eps": 1e-6,
         "rope_scaling": {"type": "yarn", "factor": 4.0, "original_max_position_embeddings": 8192},
         "rope_theta": 10000000.0,
-        "routed_scaling_factor": 1.0,
-        "router_aux_loss_coef": 0.001,
-        "router_bias_update_rate": 0.0001,
+        "routed_scaling_factor": 2.5,
+        "router_aux_loss_coef": 0.0001,
+        "router_bias_update_rate": 0.001,
         "scoring_func": "sigmoid",
         "shared_expert_intermediate_size": 1024,
         "tie_word_embeddings": False,
@@ -137,7 +137,7 @@ class TestChimeraBridge:
         assert provider.moe_router_score_function == "sigmoid"
         assert provider.moe_router_pre_softmax is False
         assert provider.moe_router_enable_expert_bias is True
-        assert provider.moe_router_bias_update_rate == 0.0001
+        assert provider.moe_router_bias_update_rate == 0.001
         assert provider.moe_router_dtype == "fp32"
         assert provider.moe_aux_loss_coeff == hf_config.router_aux_loss_coef
         assert provider.moe_shared_expert_gate is False
@@ -163,7 +163,9 @@ class TestChimeraBridge:
         assert hf_config["n_shared_experts"] == 1
         assert hf_config["moe_intermediate_size"] == 1024
         assert hf_config["shared_expert_intermediate_size"] == 1024
-        assert hf_config["router_bias_update_rate"] == 0.0001
+        assert hf_config["router_bias_update_rate"] == 0.001
+        assert hf_config["router_aux_loss_coef"] == 0.0001
+        assert hf_config["routed_scaling_factor"] == 2.5
         assert hf_config["norm_topk_prob"] is True
         assert hf_config["topk_method"] == "noaux_tc"
         assert hf_config["scoring_func"] == "sigmoid"
