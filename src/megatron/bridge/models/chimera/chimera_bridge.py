@@ -61,8 +61,8 @@ class ChimeraBridge(MegatronModelBridge):
 
         shared_size = getattr(provider, "moe_shared_expert_intermediate_size", None)
         moe_ffn = getattr(provider, "moe_ffn_hidden_size", None)
-        n_shared_experts = 1
-        if shared_size is not None and moe_ffn:
+        n_shared_experts = 0
+        if shared_size and moe_ffn:
             n_shared_experts = max(1, shared_size // moe_ffn)
 
         hf_config.update(
@@ -79,9 +79,10 @@ class ChimeraBridge(MegatronModelBridge):
                 "pad_token_id": 1,
                 "bos_token_id": 0,
                 "eos_token_id": 1,
+                "qk_layernorm": getattr(provider, "qk_layernorm", False),
                 "router_bias_update_rate": getattr(provider, "moe_router_bias_update_rate", 0.001),
                 "scoring_func": "sigmoid",
-                "shared_expert_intermediate_size": shared_size // n_shared_experts if shared_size else None,
+                "shared_expert_intermediate_size": shared_size // n_shared_experts if n_shared_experts else 0,
                 "topk_group": getattr(provider, "moe_router_group_topk", 1) or 1,
                 "topk_method": "noaux_tc",
             }
@@ -104,6 +105,7 @@ class ChimeraBridge(MegatronModelBridge):
         provider.gated_linear_unit = True
         provider.add_bias_linear = False
         provider.add_qkv_bias = False
+        provider.qk_layernorm = getattr(hf_config, "qk_layernorm", False)
         provider.share_embeddings_and_output_weights = False
         provider.hidden_dropout = 0.0
         provider.autocast_dtype = torch.bfloat16
@@ -125,9 +127,11 @@ class ChimeraBridge(MegatronModelBridge):
         provider.moe_router_enable_expert_bias = True
         provider.moe_router_bias_update_rate = getattr(hf_config, "router_bias_update_rate", 0.001)
         provider.moe_shared_expert_gate = False
-        provider.moe_shared_expert_overlap = True
+        provider.moe_shared_expert_overlap = hf_config.n_shared_experts > 0
         provider.moe_shared_expert_intermediate_size = (
             hf_config.shared_expert_intermediate_size * hf_config.n_shared_experts
+            if hf_config.n_shared_experts > 0
+            else None
         )
 
         first_dense = hf_config.first_k_dense_replace
@@ -153,6 +157,8 @@ class ChimeraBridge(MegatronModelBridge):
             "decoder.layers.*.input_layernorm.weight": "model.layers.*.input_layernorm.weight",
             "decoder.layers.*.self_attention.linear_qkv.layer_norm_weight": "model.layers.*.input_layernorm.weight",
             "decoder.layers.*.self_attention.linear_proj.weight": "model.layers.*.self_attn.o_proj.weight",
+            "decoder.layers.*.self_attention.q_layernorm.weight": "model.layers.*.self_attn.q_norm.weight",
+            "decoder.layers.*.self_attention.k_layernorm.weight": "model.layers.*.self_attn.k_norm.weight",
             "decoder.layers.*.pre_mlp_layernorm.weight": "model.layers.*.post_attention_layernorm.weight",
             "decoder.layers.*.mlp.linear_fc1.layer_norm_weight": "model.layers.*.post_attention_layernorm.weight",
             # Dense MLP
