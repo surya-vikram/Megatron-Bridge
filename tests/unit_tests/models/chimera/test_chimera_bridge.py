@@ -55,6 +55,7 @@ def chimera_config_dict() -> dict:
         "num_key_value_heads": 2,
         "original_max_position_embeddings": 8192,
         "pad_token_id": 1,
+        "qk_layernorm": True,
         "rms_norm_eps": 1e-6,
         "rope_scaling": {"type": "yarn", "factor": 4.0, "original_max_position_embeddings": 8192},
         "rope_theta": 10000000.0,
@@ -128,6 +129,7 @@ class TestChimeraBridge:
         assert provider.normalization == "RMSNorm"
         assert provider.gated_linear_unit is True
         assert provider.add_qkv_bias is False
+        assert provider.qk_layernorm is True
         assert provider.add_bias_linear is False
         assert provider.num_moe_experts == hf_config.n_routed_experts
         assert provider.moe_router_topk == hf_config.num_experts_per_tok
@@ -163,6 +165,7 @@ class TestChimeraBridge:
         assert hf_config["n_shared_experts"] == 1
         assert hf_config["moe_intermediate_size"] == 1024
         assert hf_config["shared_expert_intermediate_size"] == 1024
+        assert hf_config["qk_layernorm"] is True
         assert hf_config["router_bias_update_rate"] == 0.001
         assert hf_config["router_aux_loss_coef"] == 0.0001
         assert hf_config["routed_scaling_factor"] == 2.5
@@ -184,6 +187,12 @@ class TestChimeraBridge:
         assert mapping_dict["decoder.final_layernorm.weight"] == "model.norm.weight"
         assert mapping_dict["decoder.layers.*.self_attention.linear_proj.weight"] == (
             "model.layers.*.self_attn.o_proj.weight"
+        )
+        assert mapping_dict["decoder.layers.*.self_attention.q_layernorm.weight"] == (
+            "model.layers.*.self_attn.q_norm.weight"
+        )
+        assert mapping_dict["decoder.layers.*.self_attention.k_layernorm.weight"] == (
+            "model.layers.*.self_attn.k_norm.weight"
         )
         assert mapping_dict["decoder.layers.*.mlp.router.weight"] == "model.layers.*.mlp.gate.weight"
         assert mapping_dict["decoder.layers.*.mlp.router.expert_bias"] == (

@@ -79,6 +79,7 @@ class ChimeraBridge(MegatronModelBridge):
                 "pad_token_id": 1,
                 "bos_token_id": 0,
                 "eos_token_id": 1,
+                "qk_layernorm": getattr(provider, "qk_layernorm", False),
                 "router_bias_update_rate": getattr(provider, "moe_router_bias_update_rate", 0.001),
                 "scoring_func": "sigmoid",
                 "shared_expert_intermediate_size": shared_size // n_shared_experts if shared_size else None,
@@ -104,6 +105,7 @@ class ChimeraBridge(MegatronModelBridge):
         provider.gated_linear_unit = True
         provider.add_bias_linear = False
         provider.add_qkv_bias = False
+        provider.qk_layernorm = getattr(hf_config, "qk_layernorm", False)
         provider.share_embeddings_and_output_weights = False
         provider.hidden_dropout = 0.0
         provider.autocast_dtype = torch.bfloat16
@@ -153,6 +155,8 @@ class ChimeraBridge(MegatronModelBridge):
             "decoder.layers.*.input_layernorm.weight": "model.layers.*.input_layernorm.weight",
             "decoder.layers.*.self_attention.linear_qkv.layer_norm_weight": "model.layers.*.input_layernorm.weight",
             "decoder.layers.*.self_attention.linear_proj.weight": "model.layers.*.self_attn.o_proj.weight",
+            "decoder.layers.*.self_attention.q_layernorm.weight": "model.layers.*.self_attn.q_norm.weight",
+            "decoder.layers.*.self_attention.k_layernorm.weight": "model.layers.*.self_attn.k_norm.weight",
             "decoder.layers.*.pre_mlp_layernorm.weight": "model.layers.*.post_attention_layernorm.weight",
             "decoder.layers.*.mlp.linear_fc1.layer_norm_weight": "model.layers.*.post_attention_layernorm.weight",
             # Dense MLP
