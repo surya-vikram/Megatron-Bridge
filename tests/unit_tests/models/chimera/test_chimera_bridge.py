@@ -143,6 +143,7 @@ class TestChimeraBridge:
         assert provider.moe_router_dtype == "fp32"
         assert provider.moe_aux_loss_coeff == hf_config.router_aux_loss_coef
         assert provider.moe_shared_expert_gate is False
+        assert provider.moe_shared_expert_overlap is True
         assert provider.moe_shared_expert_intermediate_size == 1024
 
     def test_provider_bridge_maps_first_and_last_dense_layers(self, mock_pretrained_chimera: Mock) -> None:
@@ -176,6 +177,25 @@ class TestChimeraBridge:
         assert hf_config["rope_scaling"]["factor"] == 4.0
         assert hf_config["rope_scaling"]["original_max_position_embeddings"] == 8192
         assert hf_config["torch_dtype"] == "bfloat16"
+
+    def test_provider_bridge_maps_no_shared_experts(self, chimera_config_dict: dict) -> None:
+        """Test Chimera configs without shared experts remain disabled through bridge conversion."""
+        config = Mock(spec=list(chimera_config_dict.keys()))
+        for key, value in chimera_config_dict.items():
+            setattr(config, key, value)
+        config.n_shared_experts = 0
+        config.shared_expert_intermediate_size = 0
+
+        pretrained = Mock(spec=PreTrainedCausalLM)
+        pretrained.config = config
+
+        provider = ChimeraBridge().provider_bridge(pretrained)
+        hf_config = ChimeraBridge.megatron_to_hf_config(provider)
+
+        assert provider.moe_shared_expert_overlap is False
+        assert provider.moe_shared_expert_intermediate_size is None
+        assert hf_config["n_shared_experts"] == 0
+        assert hf_config["shared_expert_intermediate_size"] == 0
 
     def test_mapping_registry_contains_core_mappings(self) -> None:
         """Test that the mapping registry contains Chimera's core parameter mappings."""
