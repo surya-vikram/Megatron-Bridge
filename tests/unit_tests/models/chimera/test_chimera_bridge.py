@@ -202,7 +202,19 @@ class TestChimeraBridge:
         assert hf_config["rope_scaling"]["type"] == "yarn"
         assert hf_config["rope_scaling"]["factor"] == 1.0
         assert hf_config["rope_scaling"]["original_max_position_embeddings"] == 8192
+        assert hf_config["rope_theta"] == 10000000.0
+        assert isinstance(hf_config["rope_theta"], float)
         assert hf_config["torch_dtype"] == "bfloat16"
+
+    def test_megatron_to_hf_config_normalizes_integer_rope_theta(self, mock_pretrained_chimera: Mock) -> None:
+        """Test strict Transformers configs receive a floating-point RoPE theta."""
+        provider = ChimeraBridge().provider_bridge(mock_pretrained_chimera)
+        provider.rotary_base = 10_000_000
+
+        hf_config = ChimeraBridge.megatron_to_hf_config(provider)
+
+        assert hf_config["rope_theta"] == 10_000_000.0
+        assert isinstance(hf_config["rope_theta"], float)
 
     def test_provider_bridge_maps_no_shared_experts(self, chimera_config_dict: dict) -> None:
         """Test Chimera configs without shared experts remain disabled through bridge conversion."""

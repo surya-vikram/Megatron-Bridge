@@ -60,6 +60,8 @@ class ChimeraBridge(MegatronModelBridge):
     def megatron_to_hf_config(cls, provider: ChimeraModelProvider) -> dict:
         """Convert Megatron provider config to a Chimera Hugging Face config dictionary."""
         hf_config = super().megatron_to_hf_config(provider)
+        if hf_config.get("rope_theta") is not None:
+            hf_config["rope_theta"] = float(hf_config["rope_theta"])
 
         moe_layer_freq = getattr(provider, "moe_layer_freq", None) or []
         first_k_dense_replace = 0
