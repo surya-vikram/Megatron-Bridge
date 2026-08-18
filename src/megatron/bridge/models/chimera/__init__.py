@@ -12,9 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from megatron.bridge.models.chimera.chimera_bridge import ChimeraBridge
+from megatron.bridge.models.chimera.chimera_bridge import ChimeraBridge, ChimeraModelProvider
 
 
 __all__ = [
     "ChimeraBridge",
+    "ChimeraModelProvider",
 ]

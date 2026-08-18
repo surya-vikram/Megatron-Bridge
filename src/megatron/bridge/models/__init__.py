@@ -16,6 +16,9 @@
 from megatron.bridge.models.bailing import (
     BailingMoeV2Bridge,
 )
+from megatron.bridge.models.chimera import (
+    ChimeraBridge,
+)
 from megatron.bridge.models.conversion.auto_bridge import AutoBridge
 from megatron.bridge.models.conversion.mapping_registry import MegatronMappingRegistry
 from megatron.bridge.models.conversion.model_bridge import MegatronModelBridge
@@ -27,9 +30,6 @@ from megatron.bridge.models.conversion.param_mapping import (
     QKVMapping,
     ReplicatedMapping,
     RowParallelMapping,
-)
-from megatron.bridge.models.chimera import (
-    ChimeraBridge,
 )
 from megatron.bridge.models.deepseek import (
     DeepSeekV2Bridge,

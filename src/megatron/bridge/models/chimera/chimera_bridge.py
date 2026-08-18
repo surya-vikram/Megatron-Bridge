@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from dataclasses import dataclass
 from functools import partial
 
 import torch
@@ -37,12 +38,26 @@ except (ImportError, ModuleNotFoundError):
     HAVE_TE = False
 
 
-@MegatronModelBridge.register_bridge(source="ChimeraForCausalLM", target=GPTModel, model_type="chimera")
+@dataclass
+class ChimeraModelProvider(GPTModelProvider):
+    """GPT provider with Chimera-only, checkpointed inference metadata."""
+
+    # The router correction bias is always part of the checkpoint. This flag only
+    # controls whether downstream inference applies that frozen bias at routing time.
+    chimera_load_with_bias: bool = True
+
+
+@MegatronModelBridge.register_bridge(
+    source="ChimeraForCausalLM",
+    target=GPTModel,
+    provider=ChimeraModelProvider,
+    model_type="chimera",
+)
 class ChimeraBridge(MegatronModelBridge):
     """Megatron Bridge for Chimera sparse MoE causal language models."""
 
     @classmethod
-    def megatron_to_hf_config(cls, provider: GPTModelProvider) -> dict:
+    def megatron_to_hf_config(cls, provider: ChimeraModelProvider) -> dict:
         """Convert Megatron provider config to a Chimera Hugging Face config dictionary."""
         hf_config = super().megatron_to_hf_config(provider)
 
@@ -80,7 +95,15 @@ class ChimeraBridge(MegatronModelBridge):
                 "bos_token_id": 0,
                 "eos_token_id": 1,
                 "qk_layernorm": getattr(provider, "qk_layernorm", False),
-                "router_bias_update_rate": getattr(provider, "moe_router_bias_update_rate", 0.001),
+                "load_with_bias": getattr(provider, "chimera_load_with_bias", True),
+                "router_aux_loss_coef": getattr(provider, "moe_aux_loss_coeff", 0.0),
+                "router_bias_update_rate": getattr(provider, "moe_router_bias_update_rate", 0.0),
+                "router_load_balancing_type": getattr(
+                    provider, "moe_router_load_balancing_type", "quantile_balancing"
+                ),
+                "router_z_loss_coef": getattr(provider, "moe_z_loss_coeff", 0.001),
+                "moe_qb_num_bins": getattr(provider, "moe_qb_num_bins", 1000),
+                "moe_qb_ema_decay": getattr(provider, "moe_qb_ema_decay", 0.0),
                 "scoring_func": "sigmoid",
                 "shared_expert_intermediate_size": shared_size // n_shared_experts if n_shared_experts else 0,
                 "topk_group": getattr(provider, "moe_router_group_topk", 1) or 1,
@@ -95,7 +118,7 @@ class ChimeraBridge(MegatronModelBridge):
 
         return hf_config
 
-    def provider_bridge(self, hf_pretrained: PreTrainedCausalLM) -> GPTModelProvider:
+    def provider_bridge(self, hf_pretrained: PreTrainedCausalLM) -> ChimeraModelProvider:
         """Convert a Chimera Hugging Face config to a Megatron GPT model provider."""
         provider = super().provider_bridge(hf_pretrained)
         hf_config = hf_pretrained.config
@@ -118,14 +141,20 @@ class ChimeraBridge(MegatronModelBridge):
 
         provider.moe_grouped_gemm = True
         provider.moe_token_dispatcher_type = "alltoall"
-        provider.moe_router_load_balancing_type = "seq_aux_loss"
+        provider.moe_router_load_balancing_type = getattr(
+            hf_config, "router_load_balancing_type", "quantile_balancing"
+        )
         provider.moe_aux_loss_coeff = hf_config.router_aux_loss_coef
+        provider.moe_z_loss_coeff = getattr(hf_config, "router_z_loss_coef", 0.001)
+        provider.moe_qb_num_bins = getattr(hf_config, "moe_qb_num_bins", 1000)
+        provider.moe_qb_ema_decay = getattr(hf_config, "moe_qb_ema_decay", 0.0)
         provider.moe_router_pre_softmax = False
         provider.moe_router_score_function = "sigmoid"
         provider.moe_router_dtype = "fp32"
         provider.moe_permute_fusion = True
         provider.moe_router_enable_expert_bias = True
-        provider.moe_router_bias_update_rate = getattr(hf_config, "router_bias_update_rate", 0.001)
+        provider.moe_router_bias_update_rate = getattr(hf_config, "router_bias_update_rate", 0.0)
+        provider.chimera_load_with_bias = getattr(hf_config, "load_with_bias", True)
         provider.moe_shared_expert_gate = False
         provider.moe_shared_expert_overlap = hf_config.n_shared_experts > 0
         provider.moe_shared_expert_intermediate_size = (
@@ -148,6 +177,9 @@ class ChimeraBridge(MegatronModelBridge):
 
     def mapping_registry(self) -> MegatronMappingRegistry:
         """Return parameter mappings between Chimera HF and Megatron-Core GPT formats."""
+        hf_config = getattr(self, "hf_config", None)
+        qk_layernorm = getattr(hf_config, "qk_layernorm", True) if hf_config is not None else True
+        has_shared_experts = getattr(hf_config, "n_shared_experts", 0) > 0 if hf_config is not None else False
         mapping_list = []
         param_mappings = {
             "embedding.word_embeddings.weight": "model.embed_tokens.weight",
@@ -157,19 +189,26 @@ class ChimeraBridge(MegatronModelBridge):
             "decoder.layers.*.input_layernorm.weight": "model.layers.*.input_layernorm.weight",
             "decoder.layers.*.self_attention.linear_qkv.layer_norm_weight": "model.layers.*.input_layernorm.weight",
             "decoder.layers.*.self_attention.linear_proj.weight": "model.layers.*.self_attn.o_proj.weight",
-            "decoder.layers.*.self_attention.q_layernorm.weight": "model.layers.*.self_attn.q_norm.weight",
-            "decoder.layers.*.self_attention.k_layernorm.weight": "model.layers.*.self_attn.k_norm.weight",
             "decoder.layers.*.pre_mlp_layernorm.weight": "model.layers.*.post_attention_layernorm.weight",
             "decoder.layers.*.mlp.linear_fc1.layer_norm_weight": "model.layers.*.post_attention_layernorm.weight",
             # Dense MLP
             "decoder.layers.*.mlp.linear_fc2.weight": "model.layers.*.mlp.down_proj.weight",
-            # Router and shared expert
+            # Router
             "decoder.layers.*.mlp.router.weight": "model.layers.*.mlp.gate.weight",
             "decoder.layers.*.mlp.router.expert_bias": "model.layers.*.mlp.gate.e_score_correction_bias",
-            "decoder.layers.*.mlp.shared_experts.linear_fc2.weight": (
-                "model.layers.*.mlp.shared_experts.down_proj.weight"
-            ),
         }
+
+        if qk_layernorm:
+            param_mappings.update(
+                {
+                    "decoder.layers.*.self_attention.q_layernorm.weight": "model.layers.*.self_attn.q_norm.weight",
+                    "decoder.layers.*.self_attention.k_layernorm.weight": "model.layers.*.self_attn.k_norm.weight",
+                }
+            )
+        if has_shared_experts:
+            param_mappings["decoder.layers.*.mlp.shared_experts.linear_fc2.weight"] = (
+                "model.layers.*.mlp.shared_experts.down_proj.weight"
+            )
 
         for megatron_param, hf_param in param_mappings.items():
             mapping_list.append(AutoMapping(megatron_param=megatron_param, hf_param=hf_param))
@@ -205,12 +244,16 @@ class ChimeraBridge(MegatronModelBridge):
                     megatron_param="decoder.layers.*.mlp.experts.local_experts.*.linear_fc2.weight",
                     hf_param="model.layers.*.mlp.experts.*.down_proj.weight",
                 ),
+            ]
+        )
+
+        if has_shared_experts:
+            mapping_list.append(
                 GatedMLPMapping(
                     megatron_param="decoder.layers.*.mlp.shared_experts.linear_fc1.weight",
                     gate="model.layers.*.mlp.shared_experts.gate_proj.weight",
                     up="model.layers.*.mlp.shared_experts.up_proj.weight",
-                ),
-            ]
-        )
+                )
+            )
 
         return MegatronMappingRegistry(*mapping_list)
