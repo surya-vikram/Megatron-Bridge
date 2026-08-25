@@ -61,7 +61,7 @@ def chimera_config_dict() -> dict:
         "original_max_position_embeddings": 8192,
         "pad_token_id": 1,
         "qk_layernorm": True,
-        "rms_norm_eps": 1e-6,
+        "rms_norm_eps": 1e-5,
         "rope_scaling": {
             "type": "yarn",
             "factor": 1.0,
@@ -188,6 +188,7 @@ class TestChimeraBridge:
         assert hf_config["moe_intermediate_size"] == 2048
         assert hf_config["shared_expert_intermediate_size"] == 0
         assert hf_config["qk_layernorm"] is True
+        assert hf_config["rms_norm_eps"] == 1e-5
         assert hf_config["load_with_bias"] is True
         assert hf_config["router_bias_update_rate"] == 0.0
         assert hf_config["router_aux_loss_coef"] == 0.0
