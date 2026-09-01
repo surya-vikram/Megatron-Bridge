@@ -14,6 +14,7 @@
 
 """Unit tests for the Chimera model bridge."""
 
+from copy import deepcopy
 from dataclasses import asdict
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -35,6 +36,7 @@ def chimera_config_dict() -> dict:
         "attention_bias": False,
         "attention_dropout": 0.0,
         "bos_token_id": 0,
+        "context_phase": "8k",
         "eos_token_id": 1,
         "first_k_dense_replace": 2,
         "head_dim": 256,
@@ -60,6 +62,7 @@ def chimera_config_dict() -> dict:
         "num_key_value_heads": 2,
         "original_max_position_embeddings": 8192,
         "pad_token_id": 1,
+        "position_embedding_type": "yarn",
         "qk_layernorm": True,
         "rms_norm_eps": 1e-5,
         "rope_scaling": {
@@ -70,6 +73,7 @@ def chimera_config_dict() -> dict:
             "mscale": 1.0,
             "mscale_all_dim": 0.0,
             "original_max_position_embeddings": 8192,
+            "truncate": False,
         },
         "rope_theta": 10000000.0,
         "routed_scaling_factor": 2.5,
@@ -138,10 +142,12 @@ class TestChimeraBridge:
 
         assert provider.position_embedding_type == "yarn"
         assert provider.yarn_rotary_scaling_factor == 1.0
+        assert provider.rotary_scaling_factor == 1.0
         assert provider.yarn_original_max_position_embeddings == hf_config.original_max_position_embeddings
         assert provider.yarn_beta_fast == 32.0
         assert provider.yarn_beta_slow == 1.0
         assert provider.yarn_correction_range_round_to_int is False
+        assert provider.chimera_context_phase == "8k"
         assert provider.normalization == "RMSNorm"
         assert provider.gated_linear_unit is True
         assert provider.add_qkv_bias is False
@@ -200,12 +206,81 @@ class TestChimeraBridge:
         assert hf_config["norm_topk_prob"] is True
         assert hf_config["topk_method"] == "noaux_tc"
         assert hf_config["scoring_func"] == "sigmoid"
+        assert hf_config["context_phase"] == "8k"
+        assert hf_config["position_embedding_type"] == "yarn"
         assert hf_config["rope_scaling"]["type"] == "yarn"
         assert hf_config["rope_scaling"]["factor"] == 1.0
         assert hf_config["rope_scaling"]["original_max_position_embeddings"] == 8192
+        assert hf_config["rope_scaling"]["truncate"] is False
         assert hf_config["rope_theta"] == 10000000.0
         assert isinstance(hf_config["rope_theta"], float)
         assert hf_config["torch_dtype"] == "bfloat16"
+
+    @pytest.mark.parametrize(
+        ("phase", "max_position_embeddings", "factor"),
+        [("8k", 8192, 1.0), ("32k", 32768, 4.0), ("64k", 65536, 8.0), ("128k", 131072, 16.0)],
+    )
+    def test_all_context_phases_round_trip_exact_config(
+        self,
+        chimera_config_dict: dict,
+        phase: str,
+        max_position_embeddings: int,
+        factor: float,
+    ) -> None:
+        """Test that every canonical YaRN phase survives HF -> MCore -> HF exactly."""
+        config_dict = deepcopy(chimera_config_dict)
+        config_dict["context_phase"] = phase
+        config_dict["max_position_embeddings"] = max_position_embeddings
+        config_dict["rope_scaling"]["factor"] = factor
+        config = Mock(spec=list(config_dict.keys()))
+        for key, value in config_dict.items():
+            setattr(config, key, value)
+        pretrained = Mock(spec=PreTrainedCausalLM)
+        pretrained.config = config
+
+        provider = ChimeraBridge().provider_bridge(pretrained)
+        exported = ChimeraBridge.megatron_to_hf_config(provider)
+
+        assert provider.chimera_context_phase == phase
+        assert provider.seq_length == max_position_embeddings
+        assert provider.rotary_scaling_factor == factor
+        assert provider.yarn_rotary_scaling_factor == factor
+        assert provider.yarn_original_max_position_embeddings == 8192
+        assert provider.yarn_correction_range_round_to_int is False
+        assert exported["context_phase"] == phase
+        assert exported["position_embedding_type"] == "yarn"
+        assert exported["max_position_embeddings"] == max_position_embeddings
+        assert exported["original_max_position_embeddings"] == 8192
+        assert exported["rope_scaling"] == config_dict["rope_scaling"]
+
+    @pytest.mark.parametrize(
+        ("field", "value", "message"),
+        [
+            ("position_embedding_type", "none", "only position_embedding_type='yarn'"),
+            ("context_phase", "8k", "does not match"),
+            ("truncate", True, "truncate=False"),
+        ],
+    )
+    def test_invalid_context_geometry_is_rejected(
+        self, chimera_config_dict: dict, field: str, value, message: str
+    ) -> None:
+        """Test that conversion cannot silently accept inconsistent position metadata."""
+        config_dict = deepcopy(chimera_config_dict)
+        config_dict["max_position_embeddings"] = 32768
+        config_dict["rope_scaling"]["factor"] = 4.0
+        config_dict["context_phase"] = "32k"
+        if field == "truncate":
+            config_dict["rope_scaling"][field] = value
+        else:
+            config_dict[field] = value
+        config = Mock(spec=list(config_dict.keys()))
+        for key, config_value in config_dict.items():
+            setattr(config, key, config_value)
+        pretrained = Mock(spec=PreTrainedCausalLM)
+        pretrained.config = config
+
+        with pytest.raises(ValueError, match=message):
+            ChimeraBridge().provider_bridge(pretrained)
 
     def test_megatron_to_hf_config_normalizes_integer_rope_theta(self, mock_pretrained_chimera: Mock) -> None:
         """Test strict Transformers configs receive a floating-point RoPE theta."""

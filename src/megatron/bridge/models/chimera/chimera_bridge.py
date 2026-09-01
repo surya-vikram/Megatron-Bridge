@@ -38,6 +38,31 @@ except (ImportError, ModuleNotFoundError):
     HAVE_TE = False
 
 
+CHIMERA_CONTEXT_PHASES = {
+    "8k": {"max_position_embeddings": 8192, "factor": 1.0},
+    "32k": {"max_position_embeddings": 32768, "factor": 4.0},
+    "64k": {"max_position_embeddings": 65536, "factor": 8.0},
+    "128k": {"max_position_embeddings": 131072, "factor": 16.0},
+}
+CHIMERA_YARN_ORIGINAL_MAX_POSITION_EMBEDDINGS = 8192
+
+
+def _context_phase(max_position_embeddings: int, factor: float, requested_phase: str | None = None) -> str:
+    """Resolve and validate one canonical Chimera YaRN context phase."""
+    for phase, geometry in CHIMERA_CONTEXT_PHASES.items():
+        if max_position_embeddings == geometry["max_position_embeddings"] and factor == geometry["factor"]:
+            if requested_phase is not None and requested_phase != phase:
+                raise ValueError(
+                    f"Chimera context_phase={requested_phase!r} does not match "
+                    f"max_position_embeddings={max_position_embeddings} and factor={factor}."
+                )
+            return phase
+    raise ValueError(
+        "Chimera requires one of the canonical YaRN context geometries: "
+        f"{CHIMERA_CONTEXT_PHASES}; found max_position_embeddings={max_position_embeddings}, factor={factor}."
+    )
+
+
 @dataclass
 class ChimeraModelProvider(GPTModelProvider):
     """GPT provider with Chimera-only, checkpointed inference metadata."""
@@ -45,6 +70,7 @@ class ChimeraModelProvider(GPTModelProvider):
     # The router correction bias is always part of the checkpoint. This flag only
     # controls whether downstream inference applies that frozen bias at routing time.
     chimera_load_with_bias: bool = True
+    chimera_context_phase: str | None = None
 
 
 @MegatronModelBridge.register_bridge(
@@ -59,6 +85,38 @@ class ChimeraBridge(MegatronModelBridge):
     @classmethod
     def megatron_to_hf_config(cls, provider: ChimeraModelProvider) -> dict:
         """Convert Megatron provider config to a Chimera Hugging Face config dictionary."""
+        if provider.position_embedding_type != "yarn":
+            raise ValueError("Chimera supports only position_embedding_type='yarn'.")
+        factor = provider.yarn_rotary_scaling_factor
+        original_max = provider.yarn_original_max_position_embeddings
+        if original_max != CHIMERA_YARN_ORIGINAL_MAX_POSITION_EMBEDDINGS:
+            raise ValueError(f"Chimera requires yarn_original_max_position_embeddings=8192, found {original_max}.")
+        phase = _context_phase(provider.seq_length, factor, provider.chimera_context_phase)
+        if provider.yarn_correction_range_round_to_int is not False:
+            raise ValueError("Chimera requires yarn_correction_range_round_to_int=False.")
+        provider_geometry = {
+            "rotary_base": provider.rotary_base,
+            "rotary_scaling_factor": provider.rotary_scaling_factor,
+            "yarn_beta_fast": provider.yarn_beta_fast,
+            "yarn_beta_slow": provider.yarn_beta_slow,
+            "yarn_mscale": provider.yarn_mscale,
+            "yarn_mscale_all_dim": provider.yarn_mscale_all_dim,
+            "layernorm_epsilon": provider.layernorm_epsilon,
+        }
+        expected_geometry = {
+            "rotary_base": 10_000_000,
+            "rotary_scaling_factor": factor,
+            "yarn_beta_fast": 32.0,
+            "yarn_beta_slow": 1.0,
+            "yarn_mscale": 1.0,
+            "yarn_mscale_all_dim": 0.0,
+            "layernorm_epsilon": 1e-5,
+        }
+        if provider_geometry != expected_geometry:
+            raise ValueError(
+                f"Chimera provider YaRN geometry differs from the canonical values: {provider_geometry}."
+            )
+
         hf_config = super().megatron_to_hf_config(provider)
         if hf_config.get("rope_theta") is not None:
             hf_config["rope_theta"] = float(hf_config["rope_theta"])
@@ -85,6 +143,8 @@ class ChimeraBridge(MegatronModelBridge):
         hf_config.update(
             {
                 "architectures": ["ChimeraForCausalLM"],
+                "context_phase": phase,
+                "position_embedding_type": "yarn",
                 "first_k_dense_replace": first_k_dense_replace,
                 "last_k_dense_replace": last_k_dense_replace,
                 "moe_intermediate_size": moe_ffn,
@@ -117,6 +177,7 @@ class ChimeraBridge(MegatronModelBridge):
             hf_config["rope_scaling"]["type"] = hf_config["rope_scaling"].pop(
                 "rope_type", hf_config["rope_scaling"].get("type", "yarn")
             )
+            hf_config["rope_scaling"]["truncate"] = False
 
         return hf_config
 
@@ -124,6 +185,44 @@ class ChimeraBridge(MegatronModelBridge):
         """Convert a Chimera Hugging Face config to a Megatron GPT model provider."""
         provider = super().provider_bridge(hf_pretrained)
         hf_config = hf_pretrained.config
+        rope_scaling = getattr(hf_config, "rope_scaling", None) or getattr(hf_config, "rope_parameters", None) or {}
+        rope_type = rope_scaling.get("type", rope_scaling.get("rope_type"))
+        if getattr(hf_config, "position_embedding_type", None) != "yarn" or rope_type != "yarn":
+            raise ValueError("Chimera supports only position_embedding_type='yarn' with YaRN rope scaling.")
+        factor = rope_scaling.get("factor")
+        original_max = rope_scaling.get(
+            "original_max_position_embeddings",
+            getattr(hf_config, "original_max_position_embeddings", None),
+        )
+        if original_max != CHIMERA_YARN_ORIGINAL_MAX_POSITION_EMBEDDINGS:
+            raise ValueError(f"Chimera requires original_max_position_embeddings=8192, found {original_max}.")
+        if rope_scaling.get("truncate") is not False:
+            raise ValueError("Chimera requires rope_scaling.truncate=False.")
+        hf_geometry = {
+            "rope_theta": hf_config.rope_theta,
+            "beta_fast": rope_scaling.get("beta_fast"),
+            "beta_slow": rope_scaling.get("beta_slow"),
+            "mscale": rope_scaling.get("mscale"),
+            "mscale_all_dim": rope_scaling.get("mscale_all_dim"),
+            "rms_norm_eps": hf_config.rms_norm_eps,
+            "top_level_original": hf_config.original_max_position_embeddings,
+        }
+        expected_geometry = {
+            "rope_theta": 10_000_000.0,
+            "beta_fast": 32.0,
+            "beta_slow": 1.0,
+            "mscale": 1.0,
+            "mscale_all_dim": 0.0,
+            "rms_norm_eps": 1e-5,
+            "top_level_original": CHIMERA_YARN_ORIGINAL_MAX_POSITION_EMBEDDINGS,
+        }
+        if hf_geometry != expected_geometry:
+            raise ValueError(f"Chimera HF YaRN geometry differs from the canonical values: {hf_geometry}.")
+        phase = _context_phase(
+            hf_config.max_position_embeddings,
+            factor,
+            getattr(hf_config, "context_phase", None),
+        )
 
         provider.transformer_layer_spec = partial(get_gpt_decoder_block_spec, use_transformer_engine=HAVE_TE)
         provider.normalization = "RMSNorm"
@@ -140,6 +239,8 @@ class ChimeraBridge(MegatronModelBridge):
         provider.yarn_beta_fast = getattr(hf_config, "yarn_beta_fast", None) or 32.0
         provider.yarn_beta_slow = getattr(hf_config, "yarn_beta_slow", None) or 1.0
         provider.yarn_correction_range_round_to_int = False
+        provider.rotary_scaling_factor = factor
+        provider.chimera_context_phase = phase
 
         provider.moe_grouped_gemm = True
         provider.moe_token_dispatcher_type = "alltoall"
