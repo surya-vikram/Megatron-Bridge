@@ -163,6 +163,10 @@ def export_megatron_to_hf(
 
     # Look for configuration files to determine the model type
     config_files = list(checkpoint_path.glob("**/run_config.yaml"))
+    if not config_files and checkpoint_path.name.startswith("iter_"):
+        parent_run_config = checkpoint_path.parent / "run_config.yaml"
+        if parent_run_config.is_file():
+            config_files = [parent_run_config]
     if not config_files:
         # Look in iter_ subdirectories
         iter_dirs = [d for d in checkpoint_path.iterdir() if d.is_dir() and d.name.startswith("iter_")]

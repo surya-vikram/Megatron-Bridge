@@ -182,6 +182,12 @@ def load_tokenizer(checkpoint_path: str, **kwargs) -> MegatronTokenizer:
     from megatron.bridge.utils.instantiate_utils import instantiate
 
     run_config_filename = get_checkpoint_run_config_filename(checkpoint_path)
+    if not file_exists(run_config_filename):
+        iteration_path = Path(checkpoint_path)
+        if iteration_path.name.startswith("iter_"):
+            parent_run_config = get_checkpoint_run_config_filename(str(iteration_path.parent))
+            if file_exists(parent_run_config):
+                run_config_filename = parent_run_config
 
     if file_exists(run_config_filename):
         run_config = read_run_config(run_config_filename)
@@ -238,6 +244,12 @@ def load_model_config(
     from megatron.bridge.utils.instantiate_utils import instantiate
 
     run_config_filename = get_checkpoint_run_config_filename(checkpoint_path)
+    if not file_exists(run_config_filename):
+        iteration_path = Path(checkpoint_path)
+        if iteration_path.name.startswith("iter_"):
+            parent_run_config = get_checkpoint_run_config_filename(str(iteration_path.parent))
+            if file_exists(parent_run_config):
+                run_config_filename = parent_run_config
 
     if file_exists(run_config_filename):
         run_config = read_run_config(run_config_filename)

@@ -212,6 +212,11 @@ class TestChimeraBridge:
         assert hf_config["rope_scaling"]["factor"] == 1.0
         assert hf_config["rope_scaling"]["original_max_position_embeddings"] == 8192
         assert hf_config["rope_scaling"]["truncate"] is False
+        assert hf_config["rope_parameters"] == {
+            "rope_type": "yarn",
+            "rope_theta": 10000000.0,
+            **{key: value for key, value in hf_config["rope_scaling"].items() if key != "type"},
+        }
         assert hf_config["rope_theta"] == 10000000.0
         assert isinstance(hf_config["rope_theta"], float)
         assert hf_config["torch_dtype"] == "bfloat16"
@@ -252,6 +257,9 @@ class TestChimeraBridge:
         assert exported["max_position_embeddings"] == max_position_embeddings
         assert exported["original_max_position_embeddings"] == 8192
         assert exported["rope_scaling"] == config_dict["rope_scaling"]
+        assert exported["rope_parameters"]["factor"] == factor
+        assert exported["rope_parameters"]["rope_type"] == "yarn"
+        assert exported["rope_parameters"]["rope_theta"] == 10000000.0
 
     @pytest.mark.parametrize(
         ("field", "value", "message"),

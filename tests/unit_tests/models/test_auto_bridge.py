@@ -467,6 +467,36 @@ class TestAutoBridge:
 
         mock_load_cfg.assert_called_once_with(str(iter_latest))
 
+    def test_from_auto_config_iteration_uses_parent_run_config(self, tmp_path):
+        """A selected Megatron-LM iteration may use its checkpoint-root run config."""
+        ckpt_dir = tmp_path / "ckpt"
+        ckpt_dir.mkdir()
+        (ckpt_dir / "run_config.yaml").write_text("dummy: true\n")
+        iteration = ckpt_dir / "iter_0000003"
+        iteration.mkdir()
+
+        mock_hf_cfg = Mock()
+        mock_hf_cfg.to_dict.return_value = {"vocab_size": 32000}
+        first_bridge = Mock()
+        first_bridge._model_bridge.megatron_to_hf_config.return_value = {"vocab_size": 64000}
+        second_bridge = Mock()
+
+        with patch("transformers.AutoConfig.from_pretrained", return_value=mock_hf_cfg):
+            with patch(
+                "megatron.bridge.training.model_load_save.load_model_config",
+                return_value=(Mock(name="megatron_cfg"), None),
+            ) as mock_load_cfg:
+                with patch(
+                    "megatron.bridge.models.conversion.utils.conform_config_to_reference",
+                    return_value={"vocab_size": 64000},
+                ):
+                    with patch.object(AutoBridge, "from_hf_config", side_effect=[first_bridge, second_bridge]):
+                        AutoBridge.from_auto_config(
+                            str(iteration), "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16"
+                        )
+
+        mock_load_cfg.assert_called_once_with(str(ckpt_dir))
+
     def test_from_auto_config_missing_checkpoint_path(self):
         """from_auto_config fails with clear message for nonexistent checkpoint root."""
         with pytest.raises(FileNotFoundError, match="Megatron checkpoint not found"):

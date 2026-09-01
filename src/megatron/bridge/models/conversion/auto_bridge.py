@@ -207,6 +207,8 @@ class AutoBridge(Generic[MegatronModelT]):
 
         # Look for configuration files to determine the model type
         run_config = checkpoint_path / "run_config.yaml"
+        if not run_config.exists() and checkpoint_path.name.startswith("iter_"):
+            run_config = checkpoint_path.parent / "run_config.yaml"
         if not run_config.exists():
             iter_dirs = [d for d in checkpoint_path.iterdir() if d.is_dir() and d.name.startswith("iter_")]
             if iter_dirs:

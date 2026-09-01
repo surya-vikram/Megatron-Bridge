@@ -178,6 +178,14 @@ class ChimeraBridge(MegatronModelBridge):
                 "rope_type", hf_config["rope_scaling"].get("type", "yarn")
             )
             hf_config["rope_scaling"]["truncate"] = False
+            # Transformers 5 exposes both names. Supplying only rope_scaling lets
+            # AutoBridge conforming retain stale rope_parameters from an older
+            # reference phase (for example factor=1 at 8K while exporting 32K).
+            # Emit both representations from the checkpoint-derived geometry.
+            rope_parameters = dict(hf_config["rope_scaling"])
+            rope_parameters["rope_type"] = rope_parameters.pop("type")
+            rope_parameters["rope_theta"] = hf_config["rope_theta"]
+            hf_config["rope_parameters"] = rope_parameters
 
         return hf_config
 
